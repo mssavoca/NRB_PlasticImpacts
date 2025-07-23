@@ -195,6 +195,12 @@ ELM_summary_GLOVE_joined <- ELM_ingest_summary_df %>%
   select(-Lat.x, -Lat.y, -Lon.x, -Lon.y)
 
 
+# Keep only rows where both Lat and Lon are not NA (i.e., both coordinates are present)
+df_with_coords <- ELM_summary_GLOVE_joined[!is.na(ELM_summary_GLOVE_joined$Lat) & !is.na(ELM_summary_GLOVE_joined$Lon), ]
+
+# Remove duplicate Title rows, keeping the first occurrence (which now always has Lat and Lon filled)
+df_deduped <- df_with_coords[!duplicated(df_with_coords$Title), ]
+
 
 
 
@@ -252,6 +258,14 @@ ELM_entangle_data <- read_xlsx("literature review for Matt_clean.xlsx", sheet = 
       TRUE ~ NA_character_
     )
   )
+
+
+
+# Step 1: Keep only rows where both Lat and Lon are not NA
+df_entangle_with_coords <- ELM_entangle_data[!is.na(ELM_entangle_data$Lat) & !is.na(ELM_entangle_data$Lon), ]
+
+# Step 2: Remove duplicates based on both Title and Taxa columns
+df_deduped_entangle <- df_entangle_with_coords[!duplicated(df_entangle_with_coords[c("Title", "Taxa")]), ]
 
 
 
