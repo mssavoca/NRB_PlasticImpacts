@@ -13,6 +13,9 @@ library(cowplot)
 library(ggpubr)
 library(grid)  # For text formatting
 
+# global map 
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
 # Ingestion data----
 
 GLOVE_original <- read_xls("Glove-2025-06-01.xls") 

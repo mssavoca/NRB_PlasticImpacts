@@ -105,7 +105,9 @@ main_plot <- ggplot(data = world) +
     limits = c("Exposure only", "Sublethal", "Lethal")
   ) +
   coord_sf(xlim = c(-180, 180), ylim = c(-90, 90)) +
-  labs(x = NULL, y = NULL, title = map_title) +  # Title goes here
+  labs(x = NULL, y = NULL, 
+       #title = map_title
+       ) +  # Title goes here
   theme_minimal() +
   theme(
     panel.background = element_rect(fill = NA, color = NA),
@@ -149,7 +151,7 @@ entangle_filtered <- df_deduped_entangle %>%
   filter(Taxa %in% c("Bird", "Mammal", "Reptile and Amphibian"))
 
 
-write.csv(entangle_filtered, "ELM_GLOVE_combined_entangle_data.csv")
+#write.csv(entangle_filtered, "ELM_GLOVE_combined_entangle_data.csv")
 
 
 # Plot A — no legend
@@ -219,20 +221,19 @@ ggsave("Plastic_Entanglement_Effects_final_nolabels_v2.pdf", final_plot, width =
 map_title <- "Entanglement Study Locations by Effect Type and Taxa"
 
 
-# Load world map
-world <- ne_countries(scale = "medium", returnclass = "sf")
 
-# Clean Lat/Lon and filter out NAs
-df_points <- entangle_summ_filtered %>%
-  mutate(
-    Lat = as.numeric(Lat),
-    Lon = as.numeric(Lon)
-  ) %>%
-  filter(!is.na(Lat), !is.na(Lon))
+# 
+# # Clean Lat/Lon and filter out NAs
+# df_points <- entangle_summ_filtered %>%
+#   mutate(
+#     Lat = as.numeric(Lat),
+#     Lon = as.numeric(Lon)
+#   ) %>%
+#   filter(!is.na(Lat), !is.na(Lon))
 
 # Set the factor order
-df_points$Effect_general <- factor(
-  df_points$Effect_general,
+ELM_entangle_summary_df$Effect_general <- factor(
+  ELM_entangle_summary_df$Effect_general,
   levels = c("Exposure only", "Sublethal", "Lethal")
 )
 
@@ -240,7 +241,8 @@ df_points$Effect_general <- factor(
 main_plot <- ggplot(data = world) +
   geom_sf(fill = "aliceblue", color = "gray50", size = 0.2) +
   geom_point(
-    data = df_points,
+    data = filter(ELM_entangle_summary_df,
+                  Taxa %in% c("Bird", "Mammal", "Reptile and Amphibian")),
     aes(x = Lon, y = Lat, color = Effect_general, shape = Taxa),
     size = 2.5, alpha = 0.8
   ) +
@@ -283,6 +285,157 @@ map_with_densities <- ggMarginal(
 map_with_densities
 
 ggsave("Plastic_Entanglement_Effects_map_with_shape_MargDens_v2.pdf", map_with_densities, width = 14, height = 12)
+
+
+
+
+
+
+
+# Combined entanglement and ingestion map----
+
+
+
+ELM_ingest_geo_summary_df <- df_deduped %>%
+  filter(!is.na(Effect_general)) %>%
+  mutate(
+    Effect_general = factor(
+      Effect_general,
+      levels = c("Exposure only", "Sublethal", "Lethal")
+    ),
+    Reference = paste(Authors, Year, sep = ", ")
+  ) %>%
+  relocate(Reference, .before = 1) %>%
+  dplyr::select(Reference, Year, Decade, Taxa, Effect_general, Lat, Lon) %>% 
+  mutate(Effect_main = "ingestion")
+
+
+ELM_entangle_geo_summary_df <- ELM_entangle_summary_df %>% 
+  mutate(Effect_main = "entanglement")
+
+
+ELM_combined_geo_summary_df <- bind_rows(ELM_ingest_geo_summary_df, ELM_entangle_geo_summary_df)
+
+
+# Robinson CRS
+crs_robin <- "+proj=robin"
+
+# World polygons in Robinson (convert to df for ggplot)
+world_robin <- st_transform(world, crs_robin)
+world_df <- fortify(as_Spatial(world_robin))   # convert to Spatial, then df
+
+# Project points to Robinson and extract x/y
+pts_robin <- ELM_combined_geo_summary_df %>%
+  filter(!is.na(Lon), !is.na(Lat),
+         Taxa %in% c("Bird", "Mammal", "Reptile and Amphibian")) %>%
+  st_as_sf(coords = c("Lon", "Lat"), crs = 4326, remove = FALSE) %>%
+  st_transform(crs_robin)
+
+pts_df <- cbind(
+  st_drop_geometry(pts_robin),
+  st_coordinates(pts_robin)
+)
+names(pts_df)[(ncol(pts_df)-1):ncol(pts_df)] <- c("x_robin", "y_robin")
+
+# Base scatterplot + world polygons
+main_plot <- ggplot() +
+  geom_polygon(data = world_df, aes(x = long, y = lat, group = group),
+               fill = "aliceblue", color = "gray50", size = 0.2) +
+  geom_point(
+    data = pts_df,
+    aes(x = x_robin, y = y_robin,
+        color = Effect_general,
+        shape = interaction(Taxa, Effect_main, sep = "_")),
+    size = 3, alpha = 0.8
+  ) +
+  scale_color_manual(values = c("Exposure only" = "darkblue",
+                                "Sublethal"     = "darkgoldenrod",
+                                "Lethal"        = "darkred")) +
+  scale_shape_manual(values = c(
+    "Bird_ingestion"                      = 1,
+    "Bird_entanglement"                   = 16,
+    "Mammal_ingestion"                    = 2,
+    "Mammal_entanglement"                 = 17,
+    "Reptile and Amphibian_ingestion"     = 0,
+    "Reptile and Amphibian_entanglement"  = 15
+  )) +
+  coord_equal() +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Add marginal densities by Effect_general
+map_with_densities <- ggMarginal(
+  main_plot,
+  type = "density",
+  margins = "both",
+  size = 8,
+  alpha = 0.2,
+  groupColour = TRUE,
+  groupFill   = TRUE
+)
+
+map_with_densities
+
+# # Base map plot with ingestion + entanglement combined
+# main_plot <- ggplot(data = world) +
+#   geom_sf(fill = "aliceblue", color = "gray50", size = 0.2) +
+#   geom_point(
+#     data = filter(ELM_combined_geo_summary_df,
+#                   Taxa %in% c("Bird", "Mammal", "Reptile and Amphibian")),
+#     aes(
+#       x = Lon, y = Lat,
+#       color = Effect_general,
+#       shape = interaction(Taxa, Effect_main, sep = "_")
+#     ),
+#     size = 3, alpha = 0.8
+#   ) +
+#   scale_color_manual(
+#     name = "Effect Type",
+#     values = c(
+#       "Exposure only" = "darkblue",
+#       "Sublethal"     = "darkgoldenrod",
+#       "Lethal"        = "darkred"
+#     )
+#   ) +
+#   scale_shape_manual(
+#     name = "Taxa × Mechanism",
+#     values = c(
+#       "Bird_ingestion"                   = 1,   # hollow circle
+#       "Bird_entanglement"                = 16,  # filled circle
+#       "Mammal_ingestion"                 = 2,   # hollow triangle
+#       "Mammal_entanglement"              = 17,  # filled triangle
+#       "Reptile and Amphibian_ingestion"  = 0,   # hollow square
+#       "Reptile and Amphibian_entanglement" = 15 # filled square
+#     )
+#   ) +
+#   coord_sf(crs = "+proj=robin") +   # Robinson projection
+#   theme_minimal() +
+#   theme(legend.position = "none")
+# 
+# main_plot
+# 
+# 
+# 
+# 
+# # Add marginal density plots grouped by Effect_general
+# map_with_densities <- ggMarginal(
+#   main_plot,
+#   type = "density",
+#   margins = "both",
+#   size = 8,
+#   alpha = 0.2,
+#   groupColour = TRUE,
+#   groupFill = TRUE
+# )
+# 
+# map_with_densities
+
+
+ggsave("Combined_Effects_map_final.pdf", map_with_densities, width = 12, height = 10)
+
+
+
+
 
 
 
